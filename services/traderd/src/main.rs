@@ -1,9 +1,10 @@
 use std::{net::SocketAddr, time::Duration};
+use std::{future, net::SocketAddr, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
 use clap::Parser;
 use metrics::MetricsHandle;
-use risk::{RiskGate, RiskState};
+use risk::RiskGate;
 use storage::init_sqlite;
 use tokio::task;
 use tokio::time;
@@ -37,7 +38,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    info!("booting traderd", sqlite = %args.sqlite_path, socket = %args.admin_socket);
+    info!(
+        sqlite = %args.sqlite_path,
+        socket = %args.admin_socket,
+        "booting traderd"
+    );
 
     let run_id = Uuid::new_v4().to_string();
     let store = init_sqlite(&args.sqlite_path).await?;
@@ -67,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
             }
         };
         if let Err(err) = run_server(&socket_path, handler).await {
-            tracing::error!("admin ipc server failed", error = ?err);
+            tracing::error!(error = ?err, "admin ipc server failed");
         }
     });
 
@@ -76,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
     let metrics_task = metrics.clone();
     task::spawn(async move {
         if let Err(err) = metrics_task.serve(metrics_addr).await {
-            tracing::error!("metrics server error", error = ?err);
+            tracing::error!(error = ?err, "metrics server error");
         }
     });
 
@@ -89,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     info!("started", %run_id);
+    info!(%run_id, "started");
 
     let store_clone = store.clone();
     let run_id_clone2 = run_id.clone();
@@ -103,13 +109,13 @@ async fn main() -> anyhow::Result<()> {
                 .log_event(&run_id_clone2, "internal", "tick", &payload.to_string())
                 .await
             {
-                tracing::warn!("failed to log tick", error = ?err);
+                tracing::warn!(error = ?err, "failed to log tick");
             }
         }
     });
 
     // keep running
-    futures::future::pending::<()>().await;
+    future::pending::<()>().await;
     Ok(())
 }
 
