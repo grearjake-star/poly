@@ -4,7 +4,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use tracing::info;
 
-pub const INIT_SQL: &str = include_str!("../../scripts/init_db.sql");
+pub const INIT_SQL: &str = include_str!("../../../scripts/init_db.sql");
 const REQUIRED_TABLES: &[&str] = &["runs", "raw_events", "incidents"];
 
 #[derive(Clone)]
