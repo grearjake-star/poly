@@ -30,12 +30,25 @@ fn log_startup(args: &Args, run_id: &str) {
     info!(%run_id, "run initialized");
 }
 
-fn validate_sqlite_path(sqlite_path: &str) -> anyhow::Result<()> {
-    if sqlite_path.starts_with("sqlite://") || sqlite_path.starts_with("sqlite::memory:") {
+fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
+    const MEMORY_PREFIX: &str = "sqlite::memory:";
+    const URL_PREFIX: &str = "sqlite://";
+
+    if path.starts_with(MEMORY_PREFIX) {
         return Ok(());
     }
 
-    bail!("invalid sqlite path: expected prefix sqlite:// or sqlite::memory:");
+    if let Some(rest) = path.strip_prefix(URL_PREFIX) {
+        let path_part = rest.split_once('?').map(|(path, _)| path).unwrap_or(rest);
+        let fs_path = std::path::Path::new(path_part);
+        if let Some(parent) = fs_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -52,6 +65,8 @@ async fn main() -> anyhow::Result<()> {
         socket = %args.admin_socket,
         "booting traderd"
     );
+
+    ensure_sqlite_parent_dir(&args.sqlite_path)?;
 
     let run_id = Uuid::new_v4().to_string();
     let store = init_sqlite(&args.sqlite_path).await?;
@@ -219,13 +234,23 @@ mod tests {
     }
 
     #[test]
-    fn invalid_sqlite_path_returns_friendly_error() {
-        let err = validate_sqlite_path("postgres://example.invalid").unwrap_err();
+    fn creates_parent_directory_for_windows_style_sqlite_url() {
+        let tmp_dir = std::env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
+
+        let original_dir = std::env::current_dir().expect("current dir should be readable");
+        std::env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
+
+        ensure_sqlite_parent_dir("sqlite://C:/poly/data/bot.db")
+            .expect("should be able to create parent directories");
+
+        let expected_parent = tmp_dir.join("C:").join("poly").join("data");
         assert!(
-            err.to_string()
-                .contains("expected prefix sqlite:// or sqlite::memory:"),
-            "unexpected error message: {}",
-            err
+            expected_parent.is_dir(),
+            "expected parent directory {:?} to exist",
+            expected_parent
         );
+
+        std::env::set_current_dir(original_dir).expect("should be able to restore cwd");
     }
 }
