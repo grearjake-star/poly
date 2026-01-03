@@ -1,4 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
+
+#[cfg(not(unix))]
+use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_SOCKET_PATH: &str = "/tmp/polymarket_bot.sock";

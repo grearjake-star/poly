@@ -1,4 +1,6 @@
-use std::{env, fs, future, net::SocketAddr, path::Path, time::Duration};
+use std::{
+    env, fs, future, net::SocketAddr, path::Path, path::PathBuf, time::Duration,
+};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
 use anyhow::bail;
@@ -40,13 +42,38 @@ fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
 
     if let Some(rest) = path.strip_prefix(URL_PREFIX) {
         let path_part = rest.split_once('?').map(|(path, _)| path).unwrap_or(rest);
-        let fs_path = std::path::Path::new(path_part);
+        let fs_path = Path::new(path_part);
         if let Some(parent) = fs_path.parent() {
             if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
+                fs::create_dir_all(parent)?;
             }
         }
     }
+
+    Ok(())
+}
+
+fn validate_sqlite_path(path: &str) -> anyhow::Result<()> {
+    const MEMORY_PREFIX: &str = "sqlite::memory:";
+    const URL_PREFIX: &str = "sqlite://";
+
+    if path.starts_with(MEMORY_PREFIX) {
+        return Ok(());
+    }
+
+    if !path.starts_with(URL_PREFIX) {
+        bail!("sqlite path must start with `sqlite://` or use `sqlite::memory:`");
+    }
+
+    // Strip off query params to check the filesystem portion.
+    let rest = path.trim_start_matches(URL_PREFIX);
+    let (path_part, _) = rest.split_once('?').unwrap_or((rest, ""));
+    if path_part.is_empty() {
+        bail!("sqlite path is missing a filesystem component after `sqlite://`");
+    }
+
+    // Best-effort parse to PathBuf to surface obvious issues (like invalid prefixes).
+    let _ = PathBuf::from(path_part);
 
     Ok(())
 }
@@ -235,11 +262,11 @@ mod tests {
 
     #[test]
     fn creates_parent_directory_for_windows_style_sqlite_url() {
-        let tmp_dir = std::env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
+        let tmp_dir = env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
+        fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
 
-        let original_dir = std::env::current_dir().expect("current dir should be readable");
-        std::env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
+        let original_dir = env::current_dir().expect("current dir should be readable");
+        env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
 
         ensure_sqlite_parent_dir("sqlite://C:/poly/data/bot.db")
             .expect("should be able to create parent directories");
@@ -251,6 +278,28 @@ mod tests {
             expected_parent
         );
 
-        std::env::set_current_dir(original_dir).expect("should be able to restore cwd");
+        env::set_current_dir(original_dir).expect("should be able to restore cwd");
+    }
+
+    #[test]
+    fn validates_memory_and_file_urls() {
+        validate_sqlite_path("sqlite::memory:?cache=shared").expect("memory dsn should validate");
+        validate_sqlite_path("sqlite://bot.db").expect("relative file url should validate");
+        validate_sqlite_path("sqlite:///C:/poly/data/bot.db")
+            .expect("absolute windows file url should validate");
+    }
+
+    #[test]
+    fn rejects_missing_or_invalid_urls() {
+        let err = validate_sqlite_path("bot.db").expect_err("should reject plain filename");
+        assert!(
+            err.to_string()
+                .contains("must start with `sqlite://` or use `sqlite::memory:`")
+        );
+
+        let err = validate_sqlite_path("sqlite://").expect_err("should reject empty path");
+        assert!(err
+            .to_string()
+            .contains("missing a filesystem component after `sqlite://`"));
     }
 }
