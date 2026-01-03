@@ -1,0 +1,46 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fetch-and-test:
+    runs-on: ubuntu-latest
+    env:
+      CRATES_IO_MIRROR_URL: ${{ secrets.CRATES_IO_MIRROR_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure crates.io mirror (optional)
+        if: env.CRATES_IO_MIRROR_URL != ''
+        run: |
+          set -euo pipefail
+          mirror="${CRATES_IO_MIRROR_URL%/}"
+          echo "CARGO_REGISTRIES_CRATES_IO_REPLACE_WITH=crates-io-mirror" >> "$GITHUB_ENV"
+          echo "CARGO_SOURCE_CRATES_IO_MIRROR_REGISTRY=sparse+${mirror}/index" >> "$GITHUB_ENV"
+
+      - name: Cargo fetch (fail fast)
+        run: cargo fetch --locked --timings
+        timeout-minutes: 10
+
+      - name: Cargo test
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cargo test --workspace --locked --all-targets --all-features -- --nocapture 2>&1 | tee artifacts/cargo-test.log
+        timeout-minutes: 30
+
+      - name: Upload cargo logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-test-log
+          path: artifacts/cargo-test.log
