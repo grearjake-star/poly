@@ -23,3 +23,10 @@ cargo test --workspace --locked --all-targets --all-features -- --nocapture | te
 ```
 
 The CI workflow uploads `artifacts/cargo-test.log` for diagnostics.
+
+## SQLite path examples
+
+- Unix: `--sqlite-path sqlite://bot.db`
+- Windows: `--sqlite-path "sqlite://C:/poly/data/bot.db"`
+
+The database directory must be writable; it will be created if it does not already exist.
