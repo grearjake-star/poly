@@ -23,10 +23,10 @@ struct Args {
 }
 
 fn log_startup(args: &Args, run_id: &str) {
-    info!("sqlite path configured", path = %args.sqlite_path);
-    info!("admin socket bind planned", socket = %args.admin_socket);
-    info!("metrics bind planned", %args.metrics_addr);
-    info!("run initialized", %run_id);
+    info!(path = %args.sqlite_path, "sqlite path configured");
+    info!(socket = %args.admin_socket, "admin socket bind planned");
+    info!(addr = %args.metrics_addr, "metrics bind planned");
+    info!(%run_id, "run initialized");
 }
 
 #[tokio::main]
@@ -104,16 +104,21 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    info!("ready", run_id = %run_id, sqlite = %args.sqlite_path, admin_socket = %args.admin_socket, metrics_addr = %args.metrics_addr);
+    info!(
+        run_id = %run_id,
+        sqlite = %args.sqlite_path,
+        admin_socket = %args.admin_socket,
+        metrics_addr = %args.metrics_addr,
+        "ready"
+    );
     if let Err(err) = store
         .log_incident(&run_id, "info", "ready", "traderd booted and ready")
         .await
     {
-        tracing::warn!("failed to record ready incident", error = ?err);
+        tracing::warn!(error = ?err, "failed to record ready incident");
     }
 
-    info!("started", %run_id);
-    info!(%run_id, "started");
+    info!(run_id = %run_id, "started");
 
     let store_clone = store.clone();
     let run_id_clone2 = run_id.clone();
