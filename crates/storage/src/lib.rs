@@ -6,7 +6,6 @@ use tracing::info;
 
 pub const INIT_SQL: &str = include_str!("../../scripts/init_db.sql");
 const REQUIRED_TABLES: &[&str] = &["runs", "raw_events", "incidents"];
-pub const INIT_SQL: &str = include_str!("../../../scripts/init_db.sql");
 
 #[derive(Clone)]
 pub struct Store {
@@ -130,8 +129,6 @@ mod tests {
 
         Ok(())
     }
-    info!(path = path, "sqlite initialized");
-    Ok(store)
 }
 
 async fn run_init_sql(pool: &SqlitePool) -> Result<()> {
