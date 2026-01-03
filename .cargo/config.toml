@@ -1,8 +1,5 @@
 [source.crates-io]
 protocol = "sparse"
-replace-with = "crates-io-sparse"
-# Override this via CARGO_REGISTRIES_CRATES_IO_REPLACE_WITH=crates-io-mirror
-# when CI must use the internal mirror.
 
 [registries.crates-io]
 protocol = "git"
