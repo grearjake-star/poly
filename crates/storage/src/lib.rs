@@ -2,9 +2,11 @@ use anyhow::Result;
 use chrono::Utc;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
-use tracing::{info, warn};
+use tracing::info;
 
 pub const INIT_SQL: &str = include_str!("../../scripts/init_db.sql");
+const REQUIRED_TABLES: &[&str] = &["runs", "raw_events", "incidents"];
+pub const INIT_SQL: &str = include_str!("../../../scripts/init_db.sql");
 
 #[derive(Clone)]
 pub struct Store {
@@ -17,7 +19,7 @@ impl Store {
             .max_connections(5)
             .connect(path)
             .await?;
-        sqlx::query_batch(INIT_SQL).execute(&pool).await?;
+        run_init_sql(&pool).await?;
         Ok(Self { pool })
     }
 
@@ -84,10 +86,61 @@ impl Store {
         .await?;
         Ok(())
     }
+
+    pub async fn validate_required_tables(&self) -> Result<Vec<String>> {
+        let mut missing = Vec::new();
+
+        for table in REQUIRED_TABLES {
+            let exists: Option<String> = sqlx::query_scalar(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name = ?1",
+            )
+            .bind(table)
+            .fetch_optional(&self.pool)
+            .await?;
+
+            if exists.is_none() {
+                missing.push((*table).to_string());
+            }
+        }
+
+        Ok(missing)
+    }
 }
 
 pub async fn init_sqlite(path: &str) -> Result<Store> {
     let store = Store::connect(path).await?;
-    info!("sqlite initialized", path);
+    info!(path = %path, "sqlite initialized");
     Ok(store)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn init_and_validate_required_tables() -> Result<()> {
+        let store = init_sqlite("sqlite::memory:?cache=shared").await?;
+        let missing_tables = store.validate_required_tables().await?;
+
+        assert!(
+            missing_tables.is_empty(),
+            "missing tables: {:?}",
+            missing_tables
+        );
+
+        Ok(())
+    }
+    info!(path = path, "sqlite initialized");
+    Ok(store)
+}
+
+async fn run_init_sql(pool: &SqlitePool) -> Result<()> {
+    for statement in INIT_SQL.split(';') {
+        let trimmed = statement.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        sqlx::query(trimmed).execute(pool).await?;
+    }
+    Ok(())
 }

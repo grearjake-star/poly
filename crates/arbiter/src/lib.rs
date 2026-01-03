@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use strategies::Intent;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Approval {
@@ -12,7 +11,7 @@ pub struct Approval {
 
 pub fn approve(intent: Intent) -> Approval {
     Approval {
-        approved_id: Uuid::new_v4().to_string(),
+        approved_id: uuid::Uuid::new_v4().to_string(),
         approved: true,
         reason: "ok".into(),
         intent,
