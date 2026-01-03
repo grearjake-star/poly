@@ -1,0 +1,15 @@
+[package]
+name = "storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+sqlx = { version = "0.7", features = ["runtime-tokio", "macros", "sqlite"] }
+chrono = "0.4"
+hostname = "0.3"
+uuid.workspace = true

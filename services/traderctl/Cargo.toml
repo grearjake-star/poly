@@ -1,0 +1,11 @@
+[package]
+name = "traderctl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive"] }
+admin_ipc = { path = "../../crates/admin_ipc" }
+tokio.workspace = true
+serde_json.workspace = true
