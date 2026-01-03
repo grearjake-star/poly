@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
 use clap::Parser;
@@ -7,7 +7,7 @@ use risk::{RiskGate, RiskState};
 use storage::init_sqlite;
 use tokio::task;
 use tokio::time;
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 use uuid::Uuid;
 
 #[derive(Parser, Debug)]
@@ -35,6 +35,25 @@ async fn main() -> anyhow::Result<()> {
     let run_id = Uuid::new_v4().to_string();
     let store = init_sqlite(&args.sqlite_path).await?;
     store.insert_run(&run_id, None).await?;
+
+    let missing_tables = store.validate_required_tables().await?;
+    if !missing_tables.is_empty() {
+        warn!(tables = ?missing_tables, "sqlite missing required tables");
+        if let Err(err) = store
+            .log_incident(
+                &run_id,
+                "warning",
+                "db_schema_missing",
+                &format!(
+                    "sqlite missing required tables: {}",
+                    missing_tables.join(", ")
+                ),
+            )
+            .await
+        {
+            warn!(error = ?err, "failed to log missing schema incident");
+        }
+    }
 
     let risk_gate = RiskGate::new();
     let run_id_clone = run_id.clone();
