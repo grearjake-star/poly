@@ -44,3 +44,10 @@ WantedBy=multi-user.target
 - rotate logs
 
 End.
+
+## SQLite path examples
+
+- Unix: `--sqlite-path sqlite://bot.db`
+- Windows: `--sqlite-path "sqlite://C:/poly/data/bot.db"`
+
+Ensure the database directory is writable; it will be created if it does not exist.

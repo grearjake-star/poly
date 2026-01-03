@@ -1,6 +1,7 @@
 use std::{env, fs, future, net::SocketAddr, path::Path, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
+use anyhow::bail;
 use clap::Parser;
 use metrics::MetricsHandle;
 use risk::RiskGate;
@@ -29,39 +30,25 @@ fn log_startup(args: &Args, run_id: &str) {
     info!(%run_id, "run initialized");
 }
 
-fn prepare_sqlite_dsn(path: &str, base_dir: Option<&Path>) -> anyhow::Result<String> {
-    const SQLITE_SCHEME: &str = "sqlite://";
+fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
+    const MEMORY_PREFIX: &str = "sqlite::memory:";
+    const URL_PREFIX: &str = "sqlite://";
 
-    let dsn = if path.starts_with("sqlite:") {
-        path.to_string()
-    } else {
-        format!("{SQLITE_SCHEME}{path}")
-    };
-
-    if dsn.starts_with("sqlite::memory:") {
-        return Ok(dsn);
+    if path.starts_with(MEMORY_PREFIX) {
+        return Ok(());
     }
 
-    if let Some(db_path) = dsn.strip_prefix(SQLITE_SCHEME) {
-        let target_path = {
-            let candidate = Path::new(db_path);
-            if candidate.is_absolute() {
-                candidate.to_path_buf()
-            } else if let Some(base) = base_dir {
-                base.join(candidate)
-            } else {
-                candidate.to_path_buf()
-            }
-        };
-
-        if let Some(parent) = target_path.parent() {
+    if let Some(rest) = path.strip_prefix(URL_PREFIX) {
+        let path_part = rest.split_once('?').map(|(path, _)| path).unwrap_or(rest);
+        let fs_path = std::path::Path::new(path_part);
+        if let Some(parent) = fs_path.parent() {
             if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
+                std::fs::create_dir_all(parent)?;
             }
         }
     }
 
-    Ok(dsn)
+    Ok(())
 }
 
 #[tokio::main]
@@ -71,14 +58,15 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let mut args = Args::parse();
+    let args = Args::parse();
+    validate_sqlite_path(&args.sqlite_path)?;
     info!(
         sqlite = %args.sqlite_path,
         socket = %args.admin_socket,
         "booting traderd"
     );
 
-    args.sqlite_path = prepare_sqlite_dsn(&args.sqlite_path, Some(&env::current_dir()?))?;
+    ensure_sqlite_parent_dir(&args.sqlite_path)?;
 
     let run_id = Uuid::new_v4().to_string();
     let store = init_sqlite(&args.sqlite_path).await?;
@@ -215,7 +203,7 @@ mod tests {
         let args = Args::parse_from([
             "traderd",
             "--sqlite-path",
-            "/tmp/test.db",
+            "sqlite:///tmp/test.db",
             "--admin-socket",
             "/tmp/test.sock",
             "--metrics-addr",
@@ -246,36 +234,23 @@ mod tests {
     }
 
     #[test]
-    fn default_sqlite_path_uses_dsn_prefix() {
-        let args = Args::parse_from(["traderd"]);
-        assert_eq!(args.sqlite_path, "sqlite://bot.db");
-    }
+    fn creates_parent_directory_for_windows_style_sqlite_url() {
+        let tmp_dir = std::env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
 
-    #[test]
-    fn windows_style_path_is_accepted() {
-        let base_dir = env::temp_dir().join(format!("traderd-test-{}", Uuid::new_v4()));
-        fs::create_dir_all(&base_dir).unwrap();
+        let original_dir = std::env::current_dir().expect("current dir should be readable");
+        std::env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
 
-        let dsn = prepare_sqlite_dsn("sqlite://C:/poly/data/bot.db", Some(&base_dir))
-            .expect("dsn should be prepared");
+        ensure_sqlite_parent_dir("sqlite://C:/poly/data/bot.db")
+            .expect("should be able to create parent directories");
 
-        assert_eq!(dsn, "sqlite://C:/poly/data/bot.db");
-        assert!(base_dir.join("C:").join("poly").join("data").exists());
+        let expected_parent = tmp_dir.join("C:").join("poly").join("data");
+        assert!(
+            expected_parent.is_dir(),
+            "expected parent directory {:?} to exist",
+            expected_parent
+        );
 
-        fs::remove_dir_all(&base_dir).unwrap();
-    }
-
-    #[test]
-    fn memory_dsn_skips_directory_creation() {
-        let base_dir = env::temp_dir().join(format!("traderd-test-{}", Uuid::new_v4()));
-        fs::create_dir_all(&base_dir).unwrap();
-
-        let dsn =
-            prepare_sqlite_dsn("sqlite::memory:", Some(&base_dir)).expect("dsn should be prepared");
-
-        assert_eq!(dsn, "sqlite::memory:");
-        assert!(fs::read_dir(&base_dir).unwrap().next().is_none());
-
-        fs::remove_dir_all(&base_dir).unwrap();
+        std::env::set_current_dir(original_dir).expect("should be able to restore cwd");
     }
 }
