@@ -1,7 +1,8 @@
 use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RiskState {
+    #[default]
     Active,
     Paused,
 }

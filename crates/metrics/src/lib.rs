@@ -12,6 +12,12 @@ pub struct MetricsHandle {
     registry: Registry,
 }
 
+impl Default for MetricsHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetricsHandle {
     pub fn new() -> Self {
         Self {
@@ -48,7 +54,7 @@ impl MetricsHandle {
         });
 
         let server = Server::bind(&addr).serve(make_svc);
-        info!("metrics exporter listening", %addr);
+        info!(%addr, "metrics exporter listening");
         server.await?;
         Ok(())
     }
