@@ -1,19 +1,7 @@
-[workspace]
-members = [
-  "services/traderd",
-  "services/traderctl",
-  "crates/metrics",
-  "crates/storage",
-  "crates/execution",
-  "crates/state",
-  "crates/strategies",
-  "crates/arbiter",
-  "crates/risk",
-  "crates/venue_polymarket",
-  "crates/sim",
-]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "strategies"
+version = "0.1.0"
 edition = "2021"
-license = "MIT"
+
+[dependencies]
+serde.workspace = true

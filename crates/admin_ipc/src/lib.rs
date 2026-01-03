@@ -35,13 +35,13 @@ where
     let _ = std::fs::remove_file(socket_path);
     let listener = UnixListener::bind(socket_path)?;
     let handler = std::sync::Arc::new(handler);
-    info!("admin ipc listening", socket = socket_path);
+    info!(socket = socket_path, "admin ipc listening");
     loop {
         let (stream, _) = listener.accept().await?;
         let handler = handler.clone();
         tokio::spawn(async move {
             if let Err(err) = handle_stream(stream, handler).await {
-                tracing::warn!("admin ipc handler error", error = ?err);
+                tracing::warn!(error = ?err, "admin ipc handler error");
             }
         });
     }

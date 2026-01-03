@@ -1,0 +1,19 @@
+[registries.crates-io]
+protocol = "sparse"
+
+[source.crates-io]
+replace-with = "crates-io-sparse"
+# Override this via CARGO_REGISTRIES_CRATES_IO_REPLACE_WITH=crates-io-mirror
+# when CI must use the internal mirror.
+
+[source.crates-io-sparse]
+registry = "sparse+https://index.crates.io/"
+
+# Optional internal mirror. Switch the replace-with target to `crates-io-mirror`
+# in CI when direct egress to crates.io is blocked.
+[source.crates-io-mirror]
+registry = "sparse+https://crates-mirror.example.com/index"
+
+[net]
+retry = 2
+git-fetch-with-cli = true
