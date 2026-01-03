@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(long, env = "SQLITE_PATH", default_value = "bot.db")]
+    #[arg(long, env = "SQLITE_PATH", default_value = "sqlite://bot.db")]
     sqlite_path: String,
 
     #[arg(long, env = "ADMIN_SOCKET", default_value = DEFAULT_SOCKET_PATH)]
