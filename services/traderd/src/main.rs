@@ -1,6 +1,7 @@
 use std::{future, net::SocketAddr, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
+use anyhow::bail;
 use clap::Parser;
 use metrics::MetricsHandle;
 use risk::RiskGate;
@@ -12,7 +13,7 @@ use uuid::Uuid;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(long, env = "SQLITE_PATH", default_value = "bot.db")]
+    #[arg(long, env = "SQLITE_PATH", default_value = "sqlite://bot.db")]
     sqlite_path: String,
 
     #[arg(long, env = "ADMIN_SOCKET", default_value = DEFAULT_SOCKET_PATH)]
@@ -29,6 +30,14 @@ fn log_startup(args: &Args, run_id: &str) {
     info!(%run_id, "run initialized");
 }
 
+fn validate_sqlite_path(sqlite_path: &str) -> anyhow::Result<()> {
+    if sqlite_path.starts_with("sqlite://") || sqlite_path.starts_with("sqlite::memory:") {
+        return Ok(());
+    }
+
+    bail!("invalid sqlite path: expected prefix sqlite:// or sqlite::memory:");
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -37,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+    validate_sqlite_path(&args.sqlite_path)?;
     info!(
         sqlite = %args.sqlite_path,
         socket = %args.admin_socket,
@@ -178,7 +188,7 @@ mod tests {
         let args = Args::parse_from([
             "traderd",
             "--sqlite-path",
-            "/tmp/test.db",
+            "sqlite:///tmp/test.db",
             "--admin-socket",
             "/tmp/test.sock",
             "--metrics-addr",
@@ -206,5 +216,16 @@ mod tests {
         assert!(output.contains(&args.admin_socket));
         assert!(output.contains(&args.metrics_addr.to_string()));
         assert!(output.contains(&run_id));
+    }
+
+    #[test]
+    fn invalid_sqlite_path_returns_friendly_error() {
+        let err = validate_sqlite_path("postgres://example.invalid").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("expected prefix sqlite:// or sqlite::memory:"),
+            "unexpected error message: {}",
+            err
+        );
     }
 }
