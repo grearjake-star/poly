@@ -1,4 +1,4 @@
-use std::{future, net::SocketAddr, time::Duration};
+use std::{env, fs, future, net::SocketAddr, path::Path, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
 use clap::Parser;
@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(long, env = "SQLITE_PATH", default_value = "bot.db")]
+    #[arg(long, env = "SQLITE_PATH", default_value = "sqlite://bot.db")]
     sqlite_path: String,
 
     #[arg(long, env = "ADMIN_SOCKET", default_value = DEFAULT_SOCKET_PATH)]
@@ -29,6 +29,41 @@ fn log_startup(args: &Args, run_id: &str) {
     info!(%run_id, "run initialized");
 }
 
+fn prepare_sqlite_dsn(path: &str, base_dir: Option<&Path>) -> anyhow::Result<String> {
+    const SQLITE_SCHEME: &str = "sqlite://";
+
+    let dsn = if path.starts_with("sqlite:") {
+        path.to_string()
+    } else {
+        format!("{SQLITE_SCHEME}{path}")
+    };
+
+    if dsn.starts_with("sqlite::memory:") {
+        return Ok(dsn);
+    }
+
+    if let Some(db_path) = dsn.strip_prefix(SQLITE_SCHEME) {
+        let target_path = {
+            let candidate = Path::new(db_path);
+            if candidate.is_absolute() {
+                candidate.to_path_buf()
+            } else if let Some(base) = base_dir {
+                base.join(candidate)
+            } else {
+                candidate.to_path_buf()
+            }
+        };
+
+        if let Some(parent) = target_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+    }
+
+    Ok(dsn)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -36,12 +71,14 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let args = Args::parse();
+    let mut args = Args::parse();
     info!(
         sqlite = %args.sqlite_path,
         socket = %args.admin_socket,
         "booting traderd"
     );
+
+    args.sqlite_path = prepare_sqlite_dsn(&args.sqlite_path, Some(&env::current_dir()?))?;
 
     let run_id = Uuid::new_v4().to_string();
     let store = init_sqlite(&args.sqlite_path).await?;
@@ -206,5 +243,39 @@ mod tests {
         assert!(output.contains(&args.admin_socket));
         assert!(output.contains(&args.metrics_addr.to_string()));
         assert!(output.contains(&run_id));
+    }
+
+    #[test]
+    fn default_sqlite_path_uses_dsn_prefix() {
+        let args = Args::parse_from(["traderd"]);
+        assert_eq!(args.sqlite_path, "sqlite://bot.db");
+    }
+
+    #[test]
+    fn windows_style_path_is_accepted() {
+        let base_dir = env::temp_dir().join(format!("traderd-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base_dir).unwrap();
+
+        let dsn = prepare_sqlite_dsn("sqlite://C:/poly/data/bot.db", Some(&base_dir))
+            .expect("dsn should be prepared");
+
+        assert_eq!(dsn, "sqlite://C:/poly/data/bot.db");
+        assert!(base_dir.join("C:").join("poly").join("data").exists());
+
+        fs::remove_dir_all(&base_dir).unwrap();
+    }
+
+    #[test]
+    fn memory_dsn_skips_directory_creation() {
+        let base_dir = env::temp_dir().join(format!("traderd-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base_dir).unwrap();
+
+        let dsn =
+            prepare_sqlite_dsn("sqlite::memory:", Some(&base_dir)).expect("dsn should be prepared");
+
+        assert_eq!(dsn, "sqlite::memory:");
+        assert!(fs::read_dir(&base_dir).unwrap().next().is_none());
+
+        fs::remove_dir_all(&base_dir).unwrap();
     }
 }
