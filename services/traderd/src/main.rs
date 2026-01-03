@@ -8,7 +8,7 @@ use risk::RiskGate;
 use storage::init_sqlite;
 use tokio::task;
 use tokio::time;
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 use uuid::Uuid;
 
 #[derive(Parser, Debug)]
@@ -48,6 +48,25 @@ async fn main() -> anyhow::Result<()> {
     let store = init_sqlite(&args.sqlite_path).await?;
     store.insert_run(&run_id, None).await?;
     log_startup(&args, &run_id);
+
+    let missing_tables = store.validate_required_tables().await?;
+    if !missing_tables.is_empty() {
+        warn!(tables = ?missing_tables, "sqlite missing required tables");
+        if let Err(err) = store
+            .log_incident(
+                &run_id,
+                "warning",
+                "db_schema_missing",
+                &format!(
+                    "sqlite missing required tables: {}",
+                    missing_tables.join(", ")
+                ),
+            )
+            .await
+        {
+            warn!(error = ?err, "failed to log missing schema incident");
+        }
+    }
 
     let risk_gate = RiskGate::new();
     let run_id_clone = run_id.clone();
