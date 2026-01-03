@@ -1,0 +1,9 @@
+[package]
+name = "arbiter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strategies = { path = "../strategies" }
+serde.workspace = true
+serde_json.workspace = true

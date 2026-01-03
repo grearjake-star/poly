@@ -1,0 +1,35 @@
+[workspace]
+members = [
+    "services/traderd",
+    "services/traderctl",
+    "crates/admin_ipc",
+    "crates/metrics",
+    "crates/storage",
+    "crates/execution",
+    "crates/state",
+    "crates/strategies",
+    "crates/arbiter",
+    "crates/risk",
+    "crates/venue_polymarket",
+    "crates/sim",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+thiserror = "1"
+clap = { version = "4", features = ["derive"] }
+
+[workspace.dependencies.prometheus]
+version = "0.13"
+features = ["process"]
