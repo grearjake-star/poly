@@ -3,13 +3,14 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Body, Request, Response, Server,
 };
-use prometheus::{Encoder, Registry, TextEncoder};
+use prometheus::{Counter, Encoder, Registry, TextEncoder};
 use std::net::SocketAddr;
 use tracing::info;
 
 #[derive(Clone)]
 pub struct MetricsHandle {
     registry: Registry,
+    heartbeat_counter: Counter,
 }
 
 impl Default for MetricsHandle {
@@ -20,13 +21,26 @@ impl Default for MetricsHandle {
 
 impl MetricsHandle {
     pub fn new() -> Self {
+        let registry = Registry::new();
+        let heartbeat_counter =
+            Counter::new("heartbeat_total", "Number of heartbeat ticks since startup")
+                .expect("heartbeat counter should be valid");
+        registry
+            .register(Box::new(heartbeat_counter.clone()))
+            .expect("heartbeat counter should register");
+
         Self {
-            registry: Registry::new(),
+            registry,
+            heartbeat_counter,
         }
     }
 
     pub fn registry(&self) -> &Registry {
         &self.registry
+    }
+
+    pub fn heartbeat_counter(&self) -> Counter {
+        self.heartbeat_counter.clone()
     }
 
     pub async fn serve(self, addr: SocketAddr) -> Result<()> {

@@ -1,4 +1,3 @@
-use std::{net::SocketAddr, time::Duration};
 use std::{future, net::SocketAddr, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
@@ -96,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let metrics = MetricsHandle::new();
+    let heartbeat_counter = metrics.heartbeat_counter();
     let metrics_addr = args.metrics_addr;
     let metrics_task = metrics.clone();
     task::spawn(async move {
@@ -122,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
         let mut tick: u64 = 0;
         loop {
             ticker.tick().await;
+            heartbeat_counter.inc();
             tick += 1;
             let payload = serde_json::json!({"tick": tick});
             if let Err(err) = store_clone
