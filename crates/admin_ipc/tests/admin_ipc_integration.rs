@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use std::sync::{Arc, Mutex};
 
 use admin_ipc::{send_request, AdminRequest, AdminResponse, AdminStatus};
