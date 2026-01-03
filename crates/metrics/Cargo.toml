@@ -1,0 +1,11 @@
+[package]
+name = "metrics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+prometheus.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+hyper = { version = "0.14", features = ["full"] }
