@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub const DEFAULT_SOCKET_PATH: &str = "/tmp/polymarket_bot.sock";
 
@@ -29,6 +28,7 @@ pub enum AdminResponse {
 #[cfg(unix)]
 mod unix {
     use super::*;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
     use tokio::net::{UnixListener, UnixStream};
     use tracing::info;
