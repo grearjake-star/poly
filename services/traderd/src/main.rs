@@ -1,6 +1,7 @@
 use std::{future, net::SocketAddr, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
+use anyhow::bail;
 use clap::Parser;
 use metrics::MetricsHandle;
 use risk::RiskGate;
@@ -58,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+    validate_sqlite_path(&args.sqlite_path)?;
     info!(
         sqlite = %args.sqlite_path,
         socket = %args.admin_socket,
@@ -201,7 +203,7 @@ mod tests {
         let args = Args::parse_from([
             "traderd",
             "--sqlite-path",
-            "/tmp/test.db",
+            "sqlite:///tmp/test.db",
             "--admin-socket",
             "/tmp/test.sock",
             "--metrics-addr",
