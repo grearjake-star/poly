@@ -241,9 +241,6 @@ pub(crate) fn cwd_guard() -> &'static Mutex<()> {
 }
 
 #[cfg(test)]
-mod sqlite_paths_tests;
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
@@ -319,7 +316,7 @@ mod tests {
             db_path.display().to_string().replace('\\', "/")
         );
         
-        ensure_sqlite_parent_dir(url).expect("should be able to create parent directories");
+        ensure_sqlite_parent_dir(&url).expect("should be able to create parent directories");
 
         let expected_parent = db_path.parent().unwrap();
         assert!(
