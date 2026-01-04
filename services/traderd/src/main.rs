@@ -41,29 +41,6 @@ fn log_startup(args: &Args, backend: DatabaseBackend, run_id: &str) {
     info!(%run_id, "run initialized");
 }
 
-fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
-    const MEMORY_PREFIX: &str = "sqlite::memory:";
-    const URL_PREFIX: &str = "sqlite://";
-
-    if path.starts_with(MEMORY_PREFIX) {
-        return Ok(());
-    }
-
-    if let Some(rest) = path.strip_prefix(URL_PREFIX) {
-        let path_part = rest.split_once('?').map(|(path, _)| path).unwrap_or(rest);
-        let fs_path = normalize_windows_style_sqlite_path(path_part);
-        if let Some(parent) = fs_path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
-            }
-        }
-    }
-
-    Ok(())
-}
-use anyhow::bail;
-use std::path::PathBuf;
-
 fn parse_sqlite_file_path(db_url: &str) -> anyhow::Result<Option<PathBuf>> {
     const MEMORY_PREFIX: &str = "sqlite::memory:";
     const URL_PREFIX: &str = "sqlite://";
