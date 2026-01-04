@@ -52,6 +52,22 @@ fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
 }
 
 fn normalize_windows_style_sqlite_path(path_part: &str) -> PathBuf {
+    let path_part = if path_part.starts_with('/') {
+        let bytes = path_part.as_bytes();
+        let has_drive_letter = bytes
+            .get(1)
+            .map(|b| b.is_ascii_alphabetic())
+            .unwrap_or(false);
+        let has_drive_colon = bytes.get(2).map(|b| *b == b':').unwrap_or(false);
+        if has_drive_letter && has_drive_colon {
+            &path_part[1..]
+        } else {
+            path_part
+        }
+    } else {
+        path_part
+    };
+
     #[cfg(windows)]
     {
         // Interpret URLs like `sqlite://C:/path/to/db` as being relative to the
@@ -295,23 +311,40 @@ mod tests {
 
     #[test]
     fn creates_parent_directory_for_windows_style_sqlite_url() {
-        let tmp_dir = env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
-        fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
+        let urls = [
+            "sqlite://C:/poly/data/bot.db",
+            "sqlite:///C:/poly/data/bot.db",
+        ];
 
-        let original_dir = env::current_dir().expect("current dir should be readable");
-        env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
+        for (idx, url) in urls.into_iter().enumerate() {
+            let tmp_dir = env::temp_dir().join(format!("poly_traderd_{}_{}", Uuid::new_v4(), idx));
+            fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
 
-        ensure_sqlite_parent_dir("sqlite://C:/poly/data/bot.db")
-            .expect("should be able to create parent directories");
+            let original_dir = env::current_dir().expect("current dir should be readable");
+            env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
 
-        let expected_parent = tmp_dir.join("C:").join("poly").join("data");
-        assert!(
-            expected_parent.is_dir(),
-            "expected parent directory {:?} to exist",
-            expected_parent
-        );
+            ensure_sqlite_parent_dir(url).expect("should be able to create parent directories");
 
-        env::set_current_dir(original_dir).expect("should be able to restore cwd");
+            let expected_parent = tmp_dir.join("C:").join("poly").join("data");
+            assert!(
+                expected_parent.is_dir(),
+                "expected parent directory {:?} to exist for {}",
+                expected_parent,
+                url
+            );
+
+            env::set_current_dir(original_dir).expect("should be able to restore cwd");
+        }
+    }
+
+    #[test]
+    fn normalizes_drive_letter_with_leading_slash() {
+        let normalized = normalize_windows_style_sqlite_path("/C:/poly/data/bot.db");
+        if cfg!(windows) {
+            assert_eq!(normalized, PathBuf::from("C:poly/data/bot.db"));
+        } else {
+            assert_eq!(normalized, PathBuf::from("C:/poly/data/bot.db"));
+        }
     }
 
     #[test]
