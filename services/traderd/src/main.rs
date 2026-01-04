@@ -1,4 +1,4 @@
-use std::{fs, future, net::SocketAddr, path::Path, path::PathBuf, time::Duration};
+use std::{fs, future, net::SocketAddr, path::PathBuf, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
 use anyhow::bail;
@@ -40,7 +40,7 @@ fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
 
     if let Some(rest) = path.strip_prefix(URL_PREFIX) {
         let path_part = rest.split_once('?').map(|(path, _)| path).unwrap_or(rest);
-        let fs_path = Path::new(path_part);
+        let fs_path = normalize_windows_style_sqlite_path(path_part);
         if let Some(parent) = fs_path.parent() {
             if !parent.as_os_str().is_empty() {
                 fs::create_dir_all(parent)?;
@@ -49,6 +49,40 @@ fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn normalize_windows_style_sqlite_path(path_part: &str) -> PathBuf {
+    #[cfg(windows)]
+    {
+        // Interpret URLs like `sqlite://C:/path/to/db` as being relative to the
+        // current working directory on the specified drive (i.e. `C:...`),
+        // rather than requiring an absolute path at the drive root. This keeps
+        // test runs from writing to system-level directories while still
+        // supporting Windows-style drive prefixes.
+        let has_drive_prefix = path_part
+            .as_bytes()
+            .get(1)
+            .map(|b| *b == b':')
+            .unwrap_or(false);
+        let has_drive_root = path_part
+            .as_bytes()
+            .get(2)
+            .map(|b| *b == b'/' || *b == b'\\')
+            .unwrap_or(false);
+
+        if has_drive_prefix && has_drive_root && !path_part.starts_with('/') {
+            let mut normalized = String::from(&path_part[..2]);
+            normalized.push_str(&path_part[3..]);
+            return PathBuf::from(normalized);
+        }
+
+        return PathBuf::from(path_part);
+    }
+
+    #[cfg(not(windows))]
+    {
+        PathBuf::from(path_part)
+    }
 }
 
 fn validate_sqlite_path(path: &str) -> anyhow::Result<()> {
@@ -291,10 +325,9 @@ mod tests {
     #[test]
     fn rejects_missing_or_invalid_urls() {
         let err = validate_sqlite_path("bot.db").expect_err("should reject plain filename");
-        assert!(
-            err.to_string()
-                .contains("must start with `sqlite://` or use `sqlite::memory:`")
-        );
+        assert!(err
+            .to_string()
+            .contains("must start with `sqlite://` or use `sqlite::memory:`"));
 
         let err = validate_sqlite_path("sqlite://").expect_err("should reject empty path");
         assert!(err
