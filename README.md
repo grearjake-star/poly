@@ -24,6 +24,15 @@ cargo test --workspace --locked --all-targets --all-features -- --nocapture | te
 
 The CI workflow uploads `artifacts/cargo-test.log` for diagnostics.
 
+## Database migrations
+
+- Migrations live in `crates/storage/migrations` and are applied automatically by `traderd` on startup.
+- To run them manually (for local dev or CI setup steps), use the SQLx CLI:
+  ```bash
+  cargo install sqlx-cli --no-default-features --features sqlite
+  sqlx migrate run --source crates/storage/migrations --database-url sqlite://bot.db
+  ```
+
 ## SQLite path examples
 
 - Unix: `--sqlite-path sqlite://bot.db`

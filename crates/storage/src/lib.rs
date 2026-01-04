@@ -4,7 +4,6 @@ use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use tracing::info;
 
-pub const INIT_SQL: &str = include_str!("../../../scripts/init_db.sql");
 const REQUIRED_TABLES: &[&str] = &["runs", "raw_events", "incidents"];
 
 #[derive(Clone)]
@@ -18,7 +17,7 @@ impl Store {
             .max_connections(5)
             .connect(path)
             .await?;
-        run_init_sql(&pool).await?;
+        sqlx::migrate!().run(&pool).await?;
         Ok(Self { pool })
     }
 
@@ -129,15 +128,4 @@ mod tests {
 
         Ok(())
     }
-}
-
-async fn run_init_sql(pool: &SqlitePool) -> Result<()> {
-    for statement in INIT_SQL.split(';') {
-        let trimmed = statement.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        sqlx::query(trimmed).execute(pool).await?;
-    }
-    Ok(())
 }

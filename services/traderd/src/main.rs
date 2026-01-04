@@ -1,6 +1,6 @@
 #[cfg(test)]
 use std::sync::{Mutex, OnceLock};
-use std::{fs, future, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{fs, future, net::SocketAddr, path::PathBuf, process, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
 use anyhow::bail;
@@ -10,7 +10,7 @@ use risk::RiskGate;
 use storage::init_sqlite;
 use tokio::task;
 use tokio::time;
-use tracing::{info, warn, Level};
+use tracing::{error, info, warn, Level};
 use uuid::Uuid;
 
 #[derive(Parser, Debug)]
@@ -123,7 +123,17 @@ async fn main() -> anyhow::Result<()> {
     ensure_sqlite_parent_dir(&args.sqlite_path)?;
 
     let run_id = Uuid::new_v4().to_string();
-    let store = init_sqlite(&args.sqlite_path).await?;
+    let store = match init_sqlite(&args.sqlite_path).await {
+        Ok(store) => store,
+        Err(err) => {
+            error!(
+                error = ?err,
+                sqlite = %args.sqlite_path,
+                "failed to initialize sqlite migrations"
+            );
+            process::exit(1);
+        }
+    };
     store.insert_run(&run_id, None).await?;
     log_startup(&args, &run_id);
 
@@ -303,10 +313,10 @@ mod tests {
         let tmp_dir = env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
         fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
 
-            let original_dir = env::current_dir().expect("current dir should be readable");
-            env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
+        let original_dir = env::current_dir().expect("current dir should be readable");
+        env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
 
-            ensure_sqlite_parent_dir(url).expect("should be able to create parent directories");
+        ensure_sqlite_parent_dir(url).expect("should be able to create parent directories");
 
         let expected_parent = tmp_dir.join("C:poly").join("data");
         assert!(
@@ -315,37 +325,37 @@ mod tests {
             expected_parent
         );
 
-            env::set_current_dir(original_dir).expect("should be able to restore cwd");
-        }
+        env::set_current_dir(original_dir).expect("should be able to restore cwd");
     }
+}
 
-    #[test]
-    fn normalizes_drive_letter_with_leading_slash() {
-        let normalized = normalize_windows_style_sqlite_path("/C:/poly/data/bot.db");
-        if cfg!(windows) {
-            assert_eq!(normalized, PathBuf::from("C:poly/data/bot.db"));
-        } else {
-            assert_eq!(normalized, PathBuf::from("C:/poly/data/bot.db"));
-        }
+#[test]
+fn normalizes_drive_letter_with_leading_slash() {
+    let normalized = normalize_windows_style_sqlite_path("/C:/poly/data/bot.db");
+    if cfg!(windows) {
+        assert_eq!(normalized, PathBuf::from("C:poly/data/bot.db"));
+    } else {
+        assert_eq!(normalized, PathBuf::from("C:/poly/data/bot.db"));
     }
+}
 
-    #[test]
-    fn validates_memory_and_file_urls() {
-        validate_sqlite_path("sqlite::memory:?cache=shared").expect("memory dsn should validate");
-        validate_sqlite_path("sqlite://bot.db").expect("relative file url should validate");
-        validate_sqlite_path("sqlite:///C:/poly/data/bot.db")
-            .expect("absolute windows file url should validate");
-    }
+#[test]
+fn validates_memory_and_file_urls() {
+    validate_sqlite_path("sqlite::memory:?cache=shared").expect("memory dsn should validate");
+    validate_sqlite_path("sqlite://bot.db").expect("relative file url should validate");
+    validate_sqlite_path("sqlite:///C:/poly/data/bot.db")
+        .expect("absolute windows file url should validate");
+}
 
-    #[test]
-    fn rejects_missing_or_invalid_urls() {
-        let err = validate_sqlite_path("bot.db").expect_err("should reject plain filename");
-        assert!(err
-            .to_string()
-            .contains("must start with `sqlite://` or use `sqlite::memory:`"));
+#[test]
+fn rejects_missing_or_invalid_urls() {
+    let err = validate_sqlite_path("bot.db").expect_err("should reject plain filename");
+    assert!(err
+        .to_string()
+        .contains("must start with `sqlite://` or use `sqlite::memory:`"));
 
-        let err = validate_sqlite_path("sqlite://").expect_err("should reject empty path");
-        assert!(err
-            .to_string()
-            .contains("missing a filesystem component after `sqlite://`"));
-    }
+    let err = validate_sqlite_path("sqlite://").expect_err("should reject empty path");
+    assert!(err
+        .to_string()
+        .contains("missing a filesystem component after `sqlite://`"));
+}
