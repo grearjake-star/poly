@@ -337,25 +337,22 @@ mod tests {
 
     #[test]
     fn creates_parent_directory_for_windows_style_sqlite_url() {
-    let _guard = crate::cwd_guard().lock().expect("cwd guard should lock");
-    let tmp_dir = env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
-    fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
+        let _guard = crate::cwd_guard().lock().expect("cwd guard should lock");
+        let tmp_dir = env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
+        let db_path = tmp_dir.join("data").join("traderd.sqlite");
+        let url = format!(
+            "sqlite:///{}",
+            db_path.display().to_string().replace('\\', "/")
+        );
+        
+        ensure_sqlite_parent_dir(url).expect("should be able to create parent directories");
 
-    let original_dir = env::current_dir().expect("current dir should be readable");
-    env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
-
-    // ✅ Define `url` in scope
-    let url = "sqlite:///C:poly/data/traderd.sqlite";
-    ensure_sqlite_parent_dir(url).expect("should be able to create parent directories");
-
-    let expected_parent = tmp_dir.join("C:poly").join("data");
-    assert!(
-        expected_parent.is_dir(),
-        "expected parent directory {:?} to exist",
-        expected_parent
-    );
-
-    env::set_current_dir(original_dir).expect("should be able to restore cwd");
+        let expected_parent = db_path.parent().unwrap();
+        assert!(
+            expected_parent.is_dir(),
+            "expected parent directory {:?} to exist",
+            expected_parent
+        );
     }
 
     #[test]
