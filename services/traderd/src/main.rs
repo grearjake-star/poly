@@ -29,51 +29,6 @@ struct Args {
     #[arg(long, env = "METRICS_ADDR", default_value = "127.0.0.1:9109")]
     metrics_addr: SocketAddr,
 }
-fn parse_sqlite_file_path(db_url: &str) -> anyhow::Result<Option<PathBuf>> {
-    const MEMORY_PREFIX: &str = "sqlite::memory:";
-    const URL_PREFIX: &str = "sqlite://";
-
-    let s = db_url.trim();
-
-    if s.starts_with(MEMORY_PREFIX) || s == ":memory:" {
-        return Ok(None);
-    }
-
-    if !s.starts_with(URL_PREFIX) {
-        bail!("sqlite path must start with `sqlite://` or use `sqlite::memory:`");
-    }
-
-    let rest = s.trim_start_matches(URL_PREFIX);
-    let (path_part, _) = rest.split_once('?').unwrap_or((rest, ""));
-    if path_part.is_empty() {
-        bail!("sqlite path is missing a filesystem component after `sqlite://`");
-    }
-
-    let mut p = path_part.to_string();
-
-    #[cfg(windows)]
-    {
-        let b = p.as_bytes();
-        if b.len() >= 4 && b[0] == b'/' && b[2] == b':' {
-            p.remove(0); // "/C:/..." -> "C:/..."
-        }
-
-        let b = p.as_bytes();
-        if b.len() >= 3 && b[1] == b':' && b[2] != b'\\' && b[2] != b'/' {
-            bail!(
-                "windows sqlite path must be absolute like `sqlite:///C:/...` (got `{}`)",
-                path_part
-            );
-        }
-    }
-
-    Ok(Some(PathBuf::from(p)))
-}
-
-fn validate_sqlite_path(db_url: &str) -> anyhow::Result<()> {
-    parse_sqlite_file_path(db_url).map(|_| ())
-}
-
 fn log_startup(args: &Args, backend: DatabaseBackend, run_id: &str) {
     info!(
         backend = ?backend,
@@ -145,8 +100,6 @@ fn ensure_sqlite_parent_dir(db_url: &str) -> anyhow::Result<()> {
     }
     Ok(())
 }
-
-
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
