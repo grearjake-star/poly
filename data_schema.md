@@ -39,7 +39,7 @@ Everything should be traceable back to **the snapshot the bot saw** and the **st
 
 ## 1) SQLite schema (initial)
 
-> Use `sqlx` migrations later; for bootstrap you can apply this SQL once (e.g., `scripts/init_db.sql`).
+> The canonical schema lives in SQLx migrations under `crates/storage/migrations`. `traderd` applies them automatically on startup. For manual runs (local dev or CI), use `sqlx migrate run --source crates/storage/migrations --database-url sqlite://bot.db` after installing `sqlx-cli` with `cargo install sqlx-cli --no-default-features --features sqlite`.
 
 ### 1.1 Schema versioning
 

@@ -43,6 +43,14 @@ WantedBy=multi-user.target
 - SQLite DB snapshot daily (offsite)
 - rotate logs
 
+## Database migrations
+- Migrations live in `crates/storage/migrations` and are applied automatically during `traderd` startup.
+- For manual runs (pre-flight checks or CI), install `sqlx-cli` and run:
+  ```bash
+  cargo install sqlx-cli --no-default-features --features sqlite
+  sqlx migrate run --source crates/storage/migrations --database-url sqlite://bot.db
+  ```
+
 End.
 
 ## SQLite path examples
