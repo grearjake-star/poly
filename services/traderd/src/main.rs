@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
 use std::{fs, future, net::SocketAddr, path::PathBuf, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
@@ -52,53 +54,30 @@ fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
 }
 
 fn normalize_windows_style_sqlite_path(path_part: &str) -> PathBuf {
-    let path_part = if path_part.starts_with('/') {
-        let bytes = path_part.as_bytes();
-        let has_drive_letter = bytes
-            .get(1)
-            .map(|b| b.is_ascii_alphabetic())
-            .unwrap_or(false);
-        let has_drive_colon = bytes.get(2).map(|b| *b == b':').unwrap_or(false);
-        if has_drive_letter && has_drive_colon {
-            &path_part[1..]
-        } else {
-            path_part
-        }
-    } else {
-        path_part
-    };
+    // Interpret URLs like `sqlite://C:/path/to/db` as being relative to the
+    // current working directory on the specified drive (i.e. `C:...`),
+    // rather than requiring an absolute path at the drive root. This keeps
+    // test runs from writing to system-level directories while still
+    // supporting Windows-style drive prefixes.
+    let trimmed = path_part.strip_prefix('/').unwrap_or(path_part);
+    let has_drive_prefix = trimmed
+        .as_bytes()
+        .get(1)
+        .map(|b| *b == b':')
+        .unwrap_or(false);
+    let has_drive_root = trimmed
+        .as_bytes()
+        .get(2)
+        .map(|b| *b == b'/' || *b == b'\\')
+        .unwrap_or(false);
 
-    #[cfg(windows)]
-    {
-        // Interpret URLs like `sqlite://C:/path/to/db` as being relative to the
-        // current working directory on the specified drive (i.e. `C:...`),
-        // rather than requiring an absolute path at the drive root. This keeps
-        // test runs from writing to system-level directories while still
-        // supporting Windows-style drive prefixes.
-        let has_drive_prefix = path_part
-            .as_bytes()
-            .get(1)
-            .map(|b| *b == b':')
-            .unwrap_or(false);
-        let has_drive_root = path_part
-            .as_bytes()
-            .get(2)
-            .map(|b| *b == b'/' || *b == b'\\')
-            .unwrap_or(false);
-
-        if has_drive_prefix && has_drive_root && !path_part.starts_with('/') {
-            let mut normalized = String::from(&path_part[..2]);
-            normalized.push_str(&path_part[3..]);
-            return PathBuf::from(normalized);
-        }
-
-        return PathBuf::from(path_part);
+    if has_drive_prefix && has_drive_root {
+        let mut normalized = String::from(&trimmed[..2]);
+        normalized.push_str(&trimmed[3..]);
+        return PathBuf::from(normalized);
     }
 
-    #[cfg(not(windows))]
-    {
-        PathBuf::from(path_part)
-    }
+    PathBuf::from(trimmed)
 }
 
 fn validate_sqlite_path(path: &str) -> anyhow::Result<()> {
@@ -245,6 +224,15 @@ async fn main() -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+pub(crate) fn cwd_guard() -> &'static Mutex<()> {
+    static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+    GUARD.get_or_init(|| Mutex::new(()))
+}
+
+#[cfg(test)]
+mod sqlite_paths_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::env;
@@ -311,27 +299,21 @@ mod tests {
 
     #[test]
     fn creates_parent_directory_for_windows_style_sqlite_url() {
-        let urls = [
-            "sqlite://C:/poly/data/bot.db",
-            "sqlite:///C:/poly/data/bot.db",
-        ];
-
-        for (idx, url) in urls.into_iter().enumerate() {
-            let tmp_dir = env::temp_dir().join(format!("poly_traderd_{}_{}", Uuid::new_v4(), idx));
-            fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
+        let _guard = crate::cwd_guard().lock().expect("cwd guard should lock");
+        let tmp_dir = env::temp_dir().join(format!("poly_traderd_{}", Uuid::new_v4()));
+        fs::create_dir_all(&tmp_dir).expect("temp dir should be creatable");
 
             let original_dir = env::current_dir().expect("current dir should be readable");
             env::set_current_dir(&tmp_dir).expect("should be able to change to temp dir");
 
             ensure_sqlite_parent_dir(url).expect("should be able to create parent directories");
 
-            let expected_parent = tmp_dir.join("C:").join("poly").join("data");
-            assert!(
-                expected_parent.is_dir(),
-                "expected parent directory {:?} to exist for {}",
-                expected_parent,
-                url
-            );
+        let expected_parent = tmp_dir.join("C:poly").join("data");
+        assert!(
+            expected_parent.is_dir(),
+            "expected parent directory {:?} to exist",
+            expected_parent
+        );
 
             env::set_current_dir(original_dir).expect("should be able to restore cwd");
         }
