@@ -38,8 +38,9 @@ Pin to release tag:
 - Current pin recommendation: `v0.3.1` (update only via explicit upgrade PR)
 
 Cargo:
-```toml
+toml
 rs-clob-client = { git = "https://github.com/Polymarket/rs-clob-client", tag = "v0.3.1" }
+
 Upgrade procedure:
 
 Open PR “Upgrade rs-clob-client to vX.Y.Z”
