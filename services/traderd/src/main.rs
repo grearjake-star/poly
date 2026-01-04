@@ -357,8 +357,10 @@ mod tests {
 
     #[test]
     fn normalizes_drive_letter_with_leading_slash() {
-        let normalized = normalize_windows_style_sqlite_path("/C:/poly/data/bot.db");
-        assert_eq!(normalized, PathBuf::from("C:poly/data/bot.db"));
+        let path = parse_sqlite_file_path("sqlite:///C:/poly/data/bot.db")
+            .expect("should parse")
+            .expect("should be file");
+        assert_eq!(path, PathBuf::from("C:/poly/data/bot.db"));
     }
 
     #[test]
@@ -367,8 +369,8 @@ mod tests {
         validate_sqlite_path("sqlite://bot.db").expect("relative file url should validate");
         validate_sqlite_path("sqlite:///C:/poly/data/bot.db")
             .expect("absolute windows file url should validate");
+    
     }
-
     #[test]
     fn rejects_missing_or_invalid_urls() {
         let err = validate_sqlite_path("bot.db").expect_err("should reject plain filename");
@@ -380,3 +382,4 @@ mod tests {
         assert!(err
             .to_string()
             .contains("missing a filesystem component after `sqlite://`"));
+    }
