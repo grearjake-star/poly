@@ -1,6 +1,4 @@
-use std::{
-    env, fs, future, net::SocketAddr, path::Path, path::PathBuf, time::Duration,
-};
+use std::{fs, future, net::SocketAddr, path::Path, path::PathBuf, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
 use anyhow::bail;
@@ -199,6 +197,7 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
     use std::sync::{Arc, Mutex};
     use tracing_subscriber::fmt::MakeWriter;
 
