@@ -14,5 +14,5 @@ serde_json.workspace = true
 clap = { workspace = true, features = ["derive"] }
 admin_ipc = { path = "../../crates/admin_ipc" }
 metrics = { path = "../../crates/metrics" }
-storage = { path = "../../crates/storage" }
+storage = { path = "../../crates/storage", features = ["postgres"] }
 risk = { path = "../../crates/risk" }

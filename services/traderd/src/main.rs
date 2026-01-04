@@ -1,13 +1,13 @@
 #[cfg(test)]
 use std::sync::{Mutex, OnceLock};
-use std::{fs, future, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{env, fs, future, net::SocketAddr, path::PathBuf, time::Duration};
 
 use admin_ipc::{run_server, AdminRequest, AdminResponse, DEFAULT_SOCKET_PATH};
 use anyhow::bail;
 use clap::Parser;
 use metrics::MetricsHandle;
 use risk::RiskGate;
-use storage::init_sqlite;
+use storage::{DatabaseBackend, Store};
 use tokio::task;
 use tokio::time;
 use tracing::{info, warn, Level};
@@ -15,8 +15,13 @@ use uuid::Uuid;
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(long, env = "SQLITE_PATH", default_value = "sqlite://bot.db")]
-    sqlite_path: String,
+    #[arg(
+        long,
+        env = "DB_URL",
+        default_value = "sqlite://bot.db",
+        alias = "sqlite-path"
+    )]
+    db_url: String,
 
     #[arg(long, env = "ADMIN_SOCKET", default_value = DEFAULT_SOCKET_PATH)]
     admin_socket: String,
@@ -25,8 +30,12 @@ struct Args {
     metrics_addr: SocketAddr,
 }
 
-fn log_startup(args: &Args, run_id: &str) {
-    info!(path = %args.sqlite_path, "sqlite path configured");
+fn log_startup(args: &Args, backend: DatabaseBackend, run_id: &str) {
+    info!(
+        backend = ?backend,
+        url = %args.db_url,
+        "database backend configured"
+    );
     info!(socket = %args.admin_socket, "admin socket bind planned");
     info!(addr = %args.metrics_addr, "metrics bind planned");
     info!(%run_id, "run initialized");
@@ -112,31 +121,45 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let args = Args::parse();
-    validate_sqlite_path(&args.sqlite_path)?;
+    let mut args = Args::parse();
+    if args.db_url == "sqlite://bot.db" {
+        if let Ok(sqlite_url) = env::var("SQLITE_PATH") {
+            args.db_url = sqlite_url;
+        }
+    }
+    let backend = DatabaseBackend::from_url(&args.db_url)?;
+
+    if matches!(backend, DatabaseBackend::Sqlite) {
+        validate_sqlite_path(&args.db_url)?;
+        ensure_sqlite_parent_dir(&args.db_url)?;
+    }
+
     info!(
-        sqlite = %args.sqlite_path,
+        db_url = %args.db_url,
+        backend = ?backend,
         socket = %args.admin_socket,
         "booting traderd"
     );
 
-    ensure_sqlite_parent_dir(&args.sqlite_path)?;
-
     let run_id = Uuid::new_v4().to_string();
-    let store = init_sqlite(&args.sqlite_path).await?;
+    let store = Store::connect(&args.db_url).await?;
     store.insert_run(&run_id, None).await?;
-    log_startup(&args, &run_id);
+    log_startup(&args, backend, &run_id);
 
     let missing_tables = store.validate_required_tables().await?;
     if !missing_tables.is_empty() {
-        warn!(tables = ?missing_tables, "sqlite missing required tables");
+        warn!(
+            backend = ?backend,
+            tables = ?missing_tables,
+            "database missing required tables"
+        );
         if let Err(err) = store
             .log_incident(
                 &run_id,
                 "warning",
                 "db_schema_missing",
                 &format!(
-                    "sqlite missing required tables: {}",
+                    "database missing required tables: {}",
                     missing_tables.join(", ")
                 ),
             )
@@ -185,7 +208,8 @@ async fn main() -> anyhow::Result<()> {
 
     info!(
         run_id = %run_id,
-        sqlite = %args.sqlite_path,
+        db_url = %args.db_url,
+        backend = ?backend,
         admin_socket = %args.admin_socket,
         metrics_addr = %args.metrics_addr,
         "ready"
@@ -235,7 +259,6 @@ mod sqlite_paths_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
     use std::sync::{Arc, Mutex};
     use tracing_subscriber::fmt::MakeWriter;
 
@@ -266,13 +289,14 @@ mod tests {
     fn startup_logs_include_configuration() {
         let args = Args::parse_from([
             "traderd",
-            "--sqlite-path",
+            "--db-url",
             "sqlite:///tmp/test.db",
             "--admin-socket",
             "/tmp/test.sock",
             "--metrics-addr",
             "127.0.0.1:9000",
         ]);
+        let backend = DatabaseBackend::Sqlite;
         let run_id = Uuid::nil().to_string();
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let writer = VecWriter(buffer.clone());
@@ -282,18 +306,19 @@ mod tests {
             .finish();
 
         tracing::subscriber::with_default(subscriber, || {
-            log_startup(&args, &run_id);
+            log_startup(&args, backend, &run_id);
         });
 
         let output =
             String::from_utf8(buffer.lock().unwrap().clone()).expect("log output should be utf8");
-        assert!(output.contains("sqlite path configured"));
+        assert!(output.contains("database backend configured"));
         assert!(output.contains("admin socket bind planned"));
         assert!(output.contains("metrics bind planned"));
         assert!(output.contains("run initialized"));
-        assert!(output.contains(&args.sqlite_path));
+        assert!(output.contains(&args.db_url));
         assert!(output.contains(&args.admin_socket));
         assert!(output.contains(&args.metrics_addr.to_string()));
+        assert!(output.contains("Sqlite"));
         assert!(output.contains(&run_id));
     }
 
@@ -323,11 +348,7 @@ mod tests {
     #[test]
     fn normalizes_drive_letter_with_leading_slash() {
         let normalized = normalize_windows_style_sqlite_path("/C:/poly/data/bot.db");
-        if cfg!(windows) {
-            assert_eq!(normalized, PathBuf::from("C:poly/data/bot.db"));
-        } else {
-            assert_eq!(normalized, PathBuf::from("C:/poly/data/bot.db"));
-        }
+        assert_eq!(normalized, PathBuf::from("C:poly/data/bot.db"));
     }
 
     #[test]
