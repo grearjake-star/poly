@@ -61,58 +61,71 @@ fn ensure_sqlite_parent_dir(path: &str) -> anyhow::Result<()> {
 
     Ok(())
 }
+use anyhow::bail;
+use std::path::PathBuf;
 
-fn normalize_windows_style_sqlite_path(path_part: &str) -> PathBuf {
-    // Interpret URLs like `sqlite://C:/path/to/db` as being relative to the
-    // current working directory on the specified drive (i.e. `C:...`),
-    // rather than requiring an absolute path at the drive root. This keeps
-    // test runs from writing to system-level directories while still
-    // supporting Windows-style drive prefixes.
-    let trimmed = path_part.strip_prefix('/').unwrap_or(path_part);
-    let has_drive_prefix = trimmed
-        .as_bytes()
-        .get(1)
-        .map(|b| *b == b':')
-        .unwrap_or(false);
-    let has_drive_root = trimmed
-        .as_bytes()
-        .get(2)
-        .map(|b| *b == b'/' || *b == b'\\')
-        .unwrap_or(false);
-
-    if has_drive_prefix && has_drive_root {
-        let mut normalized = String::from(&trimmed[..2]);
-        normalized.push_str(&trimmed[3..]);
-        return PathBuf::from(normalized);
-    }
-
-    PathBuf::from(trimmed)
-}
-
-fn validate_sqlite_path(path: &str) -> anyhow::Result<()> {
+fn parse_sqlite_file_path(db_url: &str) -> anyhow::Result<Option<PathBuf>> {
     const MEMORY_PREFIX: &str = "sqlite::memory:";
     const URL_PREFIX: &str = "sqlite://";
 
-    if path.starts_with(MEMORY_PREFIX) {
-        return Ok(());
+    let s = db_url.trim();
+
+    if s.starts_with(MEMORY_PREFIX) || s == ":memory:" {
+        return Ok(None);
     }
 
-    if !path.starts_with(URL_PREFIX) {
+    if !s.starts_with(URL_PREFIX) {
         bail!("sqlite path must start with `sqlite://` or use `sqlite::memory:`");
     }
 
-    // Strip off query params to check the filesystem portion.
-    let rest = path.trim_start_matches(URL_PREFIX);
+    // strip scheme and any query params
+    let rest = s.trim_start_matches(URL_PREFIX);
     let (path_part, _) = rest.split_once('?').unwrap_or((rest, ""));
     if path_part.is_empty() {
         bail!("sqlite path is missing a filesystem component after `sqlite://`");
     }
 
-    // Best-effort parse to PathBuf to surface obvious issues (like invalid prefixes).
-    let _ = PathBuf::from(path_part);
+    // Windows: sqlite:///C:/... becomes "/C:/..." after stripping "sqlite://"
+    // We want "C:/..." (a real absolute path).
+    let mut p = path_part.to_string();
 
+    #[cfg(windows)]
+    {
+        let b = p.as_bytes();
+        if b.len() >= 4 && b[0] == b'/' && b[2] == b':' {
+            // "/C:/..." -> "C:/..."
+            p.remove(0);
+        }
+
+        // Reject drive-relative "C:foo" because it’s ambiguous and causes pain.
+        let b = p.as_bytes();
+        if b.len() >= 3 && b[1] == b':' && b[2] != b'\\' && b[2] != b'/' {
+            bail!(
+                "windows sqlite path must be absolute like `sqlite:///C:/...` (got `{}`)",
+                path_part
+            );
+        }
+    }
+
+    Ok(Some(PathBuf::from(p)))
+}
+
+fn validate_sqlite_path(db_url: &str) -> anyhow::Result<()> {
+    parse_sqlite_file_path(db_url).map(|_| ())
+}
+
+fn ensure_sqlite_parent_dir(db_url: &str) -> anyhow::Result<()> {
+    if let Some(path) = parse_sqlite_file_path(db_url)? {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+    }
     Ok(())
 }
+
+
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
