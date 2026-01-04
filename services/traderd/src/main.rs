@@ -74,17 +74,6 @@ fn validate_sqlite_path(db_url: &str) -> anyhow::Result<()> {
     parse_sqlite_file_path(db_url).map(|_| ())
 }
 
-fn ensure_sqlite_parent_dir(db_url: &str) -> anyhow::Result<()> {
-    if let Some(path) = parse_sqlite_file_path(db_url)? {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
-    }
-    Ok(())
-}
-
 fn log_startup(args: &Args, backend: DatabaseBackend, run_id: &str) {
     info!(
         backend = ?backend,
