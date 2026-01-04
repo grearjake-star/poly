@@ -349,4 +349,3 @@ mod tests {
         assert!(err
             .to_string()
             .contains("missing a filesystem component after `sqlite://`"));
-    }
